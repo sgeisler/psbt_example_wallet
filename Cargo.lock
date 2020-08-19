@@ -75,6 +75,7 @@ dependencies = [
 [[package]]
 name = "bitcoincore-rpc"
 version = "0.11.0"
+source = "git+https://github.com/sgeisler/rust-bitcoincore-rpc?branch=2020-08-scantxoutset#b406d9ca0594bfa1cfdb08224cbd0ae428715707"
 dependencies = [
  "bitcoincore-rpc-json",
  "jsonrpc",
@@ -86,6 +87,7 @@ dependencies = [
 [[package]]
 name = "bitcoincore-rpc-json"
 version = "0.11.0"
+source = "git+https://github.com/sgeisler/rust-bitcoincore-rpc?branch=2020-08-scantxoutset#b406d9ca0594bfa1cfdb08224cbd0ae428715707"
 dependencies = [
  "bitcoin",
  "hex 0.3.2",

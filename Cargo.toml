@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 bip39 = "1.0.0-rc1"
 bitcoin = "0.23.0" #{ git = "https://github.com/sgeisler/rust-bitcoin/", branch = "2020-08-psbt-interfaces" }
-bitcoincore-rpc = {path="../rust-bitcoincore-rpc/client"}
+bitcoincore-rpc = { git = "https://github.com/sgeisler/rust-bitcoincore-rpc", branch = "2020-08-scantxoutset" }
 hex = "0.4.2"
 secp256k1 = "0.17.2"
 miniscript = { git = "https://github.com/afilini/rust-miniscript/", branch = "sgeisler-descriptor-key"}
