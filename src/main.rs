@@ -221,15 +221,15 @@ impl<'a, 'b: 'a> Iterator for FetchUtxoIterator<'a, 'b> {
                 .children
                 .next()
                 .expect("infinite iterator for all intents and purposes");
-            let addr = self.descriptor.derive(&path[..]).address(self.net).unwrap();
+            let script = self.descriptor.derive(&path[..]).script_pubkey();
 
             let utxos = match self
                 .rpc
-                .scan_txout_set(&[ScanTxoutRequest::Single(format!("addr({})", addr))])
+                .scan_txout_set(&[ScanTxoutRequest::Single(format!("raw({:x})", script))])
             {
                 Ok(utxos) => utxos,
                 Err(e) => return Some(Err(e)),
-            }; //TODO: fix!!! maybe raw?!
+            };
             self.last_res = (path, utxos.unspents);
             gap += 1;
         }
