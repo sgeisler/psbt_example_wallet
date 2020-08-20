@@ -109,9 +109,16 @@ where
 
                 let script = &input.witness_utxo.as_ref().unwrap().script_pubkey;
 
-                let mut script_code = vec![0x76u8, 0xa9, 0x14];
-                script_code.extend_from_slice(&script[2..]);
-                script_code.extend_from_slice(&[0x88, 0xac]);
+                let script_code = if script.is_v0_p2wpkh() {
+                    let mut script_code = vec![0x76u8, 0xa9, 0x14];
+                    script_code.extend_from_slice(&script[2..]);
+                    script_code.extend_from_slice(&[0x88, 0xac]);
+                    script_code
+                } else if script.is_v0_p2wsh() {
+                    input.witness_script.as_ref().unwrap().to_bytes()
+                } else {
+                    unimplemented!()
+                };
 
                 let sig_hash = hasher.signature_hash(
                     input_idx,
@@ -148,10 +155,9 @@ impl SignPsbt for ExtendedPrivKey {
     ) -> Result<PartiallySignedTransaction, PsbtSignError<Self::Error>> {
         let mut sign_closure = |msg, fp, path| -> Result<Option<Signature>, Self::Error> {
             let ctx = secp256k1::Secp256k1::new();
-            // TODO: check path match … determine remaining path
-            /*if self.fingerprint(&ctx) != fp {
+            if self.fingerprint(&ctx) != fp {
                 return Ok(None);
-            }*/
+            }
 
             let key = match self.derive_priv(&ctx, &path) {
                 Ok(key) => key,

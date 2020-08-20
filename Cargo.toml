@@ -12,7 +12,7 @@ bitcoin = "0.23.0" #{ git = "https://github.com/sgeisler/rust-bitcoin/", branch 
 bitcoincore-rpc = { git = "https://github.com/sgeisler/rust-bitcoincore-rpc", branch = "2020-08-scantxoutset" }
 hex = "0.4.2"
 secp256k1 = "0.17.2"
-miniscript = { git = "https://github.com/afilini/rust-miniscript/", branch = "sgeisler-descriptor-key"}
+miniscript = { git = "https://github.com/afilini/rust-miniscript/", branch = "sgeisler-descriptor-key", features = ["compiler"] }
 base64 = "0.12.3"
 itertools = "0.9.0"
 structopt = "0.3.16"

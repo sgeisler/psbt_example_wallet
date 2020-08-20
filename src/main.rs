@@ -2,6 +2,7 @@ use crate::responsibilities::{PsbtCreationError, PsbtWallet, SignPsbt};
 use bip39::Mnemonic;
 use bitcoin::blockdata::constants::max_target;
 use bitcoin::consensus::Encodable;
+use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::util::bip32::{
     ChildNumber, DerivationPath, DerivationPathIterator, ExtendedPrivKey, ExtendedPubKey,
@@ -17,7 +18,9 @@ use bitcoincore_rpc::bitcoincore_rpc_json::{ScanTxoutRequest, ScanUtxoResult, Ut
 use bitcoincore_rpc::{Auth, Client, Error, RpcApi};
 use itertools::zip;
 use miniscript::descriptor::DescriptorPublicKey;
-use miniscript::Descriptor;
+use miniscript::miniscript::Segwitv0;
+use miniscript::policy::concrete::Policy;
+use miniscript::{Descriptor, Miniscript};
 use secp256k1::{Message, Signature};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
@@ -163,7 +166,16 @@ impl NaiveWallet {
             }
             Descriptor::ShWpkh(_) => unimplemented!(),
             Descriptor::Sh(_) => unimplemented!(),
-            Descriptor::Wsh(_) => unimplemented!(),
+            Descriptor::Wsh(msc) => {
+                input.witness_utxo = Some(TxOut {
+                    value: utxo.amount.as_sat(),
+                    script_pubkey: utxo.script_pub_key,
+                });
+                let script = msc.encode();
+                let mut sh = bitcoin::hashes::sha256::Hash::hash(&script[..]);
+                println!("hash: {}", sh);
+                input.witness_script = Some(script);
+            }
             Descriptor::ShWsh(_) => unimplemented!(),
         }
 
@@ -311,14 +323,25 @@ impl PsbtWallet for NaiveWallet {
 }
 
 pub fn finalize(mut psbt: PartiallySignedTransaction) -> PartiallySignedTransaction {
-    for input in psbt.inputs.iter_mut() {
-        if let Some(utxo) = &input.witness_utxo {
-            assert!(utxo.script_pubkey.is_v0_p2wpkh());
-            assert_eq!(input.partial_sigs.len(), 1);
-            let (key, sig) = input.partial_sigs.iter().next().unwrap();
+    miniscript::psbt::finalize(&mut psbt).unwrap();
+    for psbt_input in psbt.inputs.iter_mut() {
+        if let Some(utxo) = &psbt_input.witness_utxo {
+            if utxo.script_pubkey.is_v0_p2wpkh() {
+                assert_eq!(psbt_input.partial_sigs.len(), 1);
+                let (key, sig) = psbt_input.partial_sigs.iter().next().unwrap();
 
-            let witness = vec![sig.clone(), key.to_bytes()];
-            input.final_script_witness = Some(witness);
+                let witness = vec![sig.clone(), key.to_bytes()];
+                psbt_input.final_script_witness = Some(witness);
+            } else if utxo.script_pubkey.is_v0_p2wsh() {
+                // TODO: this probably belongs into the miniscript finalizer?
+                psbt_input
+                    .final_script_witness
+                    .as_mut()
+                    .unwrap()
+                    .push(psbt_input.witness_script.as_ref().unwrap().to_bytes());
+            } else {
+                unimplemented!()
+            }
         } else {
             unimplemented!()
         }
@@ -344,8 +367,11 @@ fn main() {
 
     let ctx = secp256k1::Secp256k1::new();
 
-    let mut xpriv = ExtendedPrivKey::from_str("tprv8ZgxMBicQKsPe2z4yh5peQ8VUQpvcmNH3zQ1gP7h3X41KWP76opG9BjVywxV2WfhxoVbEFfVjD6jjmR7ZM9NUBqQZmrhY1EuvbVQqY4VYKV").unwrap();
-    let xpub = ExtendedPubKey::from_private(&ctx, &xpriv);
+    let mut xpriv_1 = ExtendedPrivKey::from_str("tprv8ZgxMBicQKsPe2z4yh5peQ8VUQpvcmNH3zQ1gP7h3X41KWP76opG9BjVywxV2WfhxoVbEFfVjD6jjmR7ZM9NUBqQZmrhY1EuvbVQqY4VYKV").unwrap();
+    let xpub_1 = ExtendedPubKey::from_private(&ctx, &xpriv_1);
+
+    let mut xpriv_2 = ExtendedPrivKey::from_str("tprv8ZgxMBicQKsPdqMNe1aFAT2RQppXMXJfFmpBpu5w93MTapDyme9SyFh4VdrGjRPjzAuFRLY8yZaEXg5pZ1Gf3xKQ8SL5tZHD6MMuKmQ2opg").unwrap();
+    let xpub_2 = ExtendedPubKey::from_private(&ctx, &xpriv_2);
 
     let rpc = bitcoincore_rpc::Client::new(
         "http://127.0.0.1:18443".into(),
@@ -353,8 +379,15 @@ fn main() {
     )
     .unwrap();
 
+    let pol = Policy::<DescriptorPublicKey>::from_str(&format!(
+        "and(pk({}/*),pk({}/*))",
+        &xpub_1, &xpub_2
+    ))
+    .unwrap();
+    let msc: Miniscript<_, Segwitv0> = pol.compile().unwrap();
+
     let mut wallet = NaiveWallet::new(
-        format!("wpkh({}/*)", &xpub).parse().unwrap(),
+        format!("wsh({})", &msc).parse().unwrap(),
         Network::Regtest,
         rpc,
         10,
@@ -380,7 +413,8 @@ fn main() {
             print!("created ");
             print_psbt(&tx);
 
-            let signed_tx = xpriv.sign_psbt(tx).unwrap();
+            let signed_tx = xpriv_1.sign_psbt(tx).unwrap();
+            let signed_tx = xpriv_2.sign_psbt(signed_tx).unwrap();
             print!("signed ");
             print_psbt(&signed_tx);
 
