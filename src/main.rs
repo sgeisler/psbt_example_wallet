@@ -1,34 +1,23 @@
 use crate::responsibilities::{PsbtCreationError, PsbtWallet, SignPsbt};
-use bip39::Mnemonic;
-use bitcoin::blockdata::constants::max_target;
 use bitcoin::consensus::Encodable;
-use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::util::bip32::{
     ChildNumber, DerivationPath, DerivationPathIterator, ExtendedPrivKey, ExtendedPubKey,
-    Fingerprint,
 };
-use bitcoin::util::misc::script_find_and_remove;
 use bitcoin::util::psbt::{Input, PartiallySignedTransaction};
-use bitcoin::{
-    Address, Amount, Network, OutPoint, PublicKey, Script, SigHashType, Transaction, TxIn, TxOut,
-    Txid,
-};
-use bitcoincore_rpc::bitcoincore_rpc_json::{ScanTxoutRequest, ScanUtxoResult, Utxo};
-use bitcoincore_rpc::{Auth, Client, Error, RpcApi};
+use bitcoin::{Address, Amount, Network, OutPoint, Script, SigHashType, Transaction, TxIn, TxOut};
+use bitcoincore_rpc::bitcoincore_rpc_json::{ScanTxoutRequest, Utxo};
+use bitcoincore_rpc::{Auth, Client, RpcApi};
 use itertools::zip;
 use miniscript::descriptor::DescriptorPublicKey;
 use miniscript::miniscript::Segwitv0;
 use miniscript::policy::concrete::Policy;
 use miniscript::{Descriptor, Miniscript};
-use secp256k1::{Message, Signature};
-use std::collections::{BTreeMap, HashMap};
-use std::fmt::Debug;
-use std::net::TcpStream;
+use std::collections::BTreeMap;
 use std::str::FromStr;
 use structopt::StructOpt;
 
-mod responsibilities;
+pub mod responsibilities;
 
 const DUST_LIMIT: u64 = 546;
 
@@ -38,7 +27,6 @@ pub struct NaiveWallet {
     network: Network,
     rpc: bitcoincore_rpc::Client,
     feerate_sat_byte: f64,
-    gap_limit: u64,
     internal_next_key: ChildNumber,
     external_next_key: ChildNumber,
 }
@@ -78,7 +66,6 @@ impl NaiveWallet {
             network,
             rpc,
             feerate_sat_byte: 1.0,
-            gap_limit,
             internal_next_key: child_num_sub(internal_it.next().unwrap()[..][1], gap_limit as u32),
             external_next_key: child_num_sub(external_it.next().unwrap()[..][1], gap_limit as u32),
         })
@@ -96,15 +83,10 @@ impl NaiveWallet {
             children,
             gap_limit,
             last_res: (DerivationPath::from(&[][..]), vec![]),
-            net: Network::Regtest,
         }
     }
 
-    fn descriptor_utxo_to_input(
-        utxo: Utxo,
-        desc: Descriptor<DescriptorPublicKey>,
-        path: DerivationPath,
-    ) -> Input {
+    fn descriptor_utxo_to_input(utxo: Utxo, desc: Descriptor<DescriptorPublicKey>) -> Input {
         let ctx = Secp256k1::new();
         let mut hd_keypaths = BTreeMap::default();
         desc.translate_pk(
@@ -139,7 +121,8 @@ impl NaiveWallet {
                 Ok(String::new())
             },
             |_| Ok(String::new()),
-        );
+        )
+        .unwrap();
 
         let mut input = Input {
             non_witness_utxo: None,
@@ -172,8 +155,6 @@ impl NaiveWallet {
                     script_pubkey: utxo.script_pub_key,
                 });
                 let script = msc.encode();
-                let mut sh = bitcoin::hashes::sha256::Hash::hash(&script[..]);
-                println!("hash: {}", sh);
                 input.witness_script = Some(script);
             }
             Descriptor::ShWsh(_) => unimplemented!(),
@@ -216,7 +197,6 @@ pub struct FetchUtxoIterator<'a, 'b: 'a> {
     children: &'a mut DerivationPathIterator<'b>,
     gap_limit: u64,
     last_res: (DerivationPath, Vec<Utxo>),
-    net: Network,
 }
 
 impl<'a, 'b: 'a> Iterator for FetchUtxoIterator<'a, 'b> {
@@ -261,7 +241,7 @@ impl PsbtWallet for NaiveWallet {
 
     fn create_transaction(
         &mut self,
-        mut outputs: &[TxOut],
+        outputs: &[TxOut],
     ) -> Result<PartiallySignedTransaction, PsbtCreationError<Self::Error>> {
         // TODO: discuss making the argument a vec
         let mut outputs = outputs.to_vec();
@@ -298,7 +278,7 @@ impl PsbtWallet for NaiveWallet {
             lock_time: 0,
             input: selected_utxos
                 .iter()
-                .map(|(deriv, utxo)| TxIn {
+                .map(|(_, utxo)| TxIn {
                     previous_output: OutPoint::new(utxo.txid, utxo.vout),
                     script_sig: Script::new(),
                     sequence: 0,
@@ -311,11 +291,7 @@ impl PsbtWallet for NaiveWallet {
         let mut psbt = PartiallySignedTransaction::from_unsigned_tx(unsinged_tx).unwrap();
 
         for ((deriv, utxo), input) in zip(selected_utxos, psbt.inputs.iter_mut()) {
-            *input = Self::descriptor_utxo_to_input(
-                utxo,
-                self.descriptor.derive(deriv.as_ref()),
-                deriv.clone(),
-            );
+            *input = Self::descriptor_utxo_to_input(utxo, self.descriptor.derive(deriv.as_ref()));
         }
 
         Ok(psbt)

@@ -1,4 +1,4 @@
-use bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey, ExtendedPubKey, Fingerprint};
+use bitcoin::util::bip32::{DerivationPath, ExtendedPrivKey, Fingerprint};
 use bitcoin::util::psbt::PartiallySignedTransaction;
 use bitcoin::{Address, Amount, Script, TxOut};
 use secp256k1::{Message, Signature};
@@ -62,7 +62,7 @@ pub trait SignPsbt {
     type Error: Debug;
 
     /// PSBT validation function that can be used by custom signers too
-    fn validate(&self, psbt: &PartiallySignedTransaction) -> Result<(), PsbtValidationError> {
+    fn validate(&self, _psbt: &PartiallySignedTransaction) -> Result<(), PsbtValidationError> {
         // default validator impl
         Ok(())
     }
