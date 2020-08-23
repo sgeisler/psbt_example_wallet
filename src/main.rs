@@ -237,7 +237,7 @@ impl<'a, 'b: 'a> Iterator for FetchUtxoIterator<'a, 'b> {
 
             let utxos = match self
                 .rpc
-                .scan_txout_set(&[ScanTxoutRequest::Single(format!("raw({:x})", script))])
+                .scan_txout_set_blocking(&[ScanTxoutRequest::Single(format!("raw({:x})", script))])
             {
                 Ok(utxos) => utxos,
                 Err(e) => return Some(Err(e)),
